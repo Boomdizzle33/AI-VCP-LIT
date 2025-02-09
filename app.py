@@ -30,7 +30,6 @@ def compute_macd(series, span_short=12, span_long=26, signal_span=9):
 # Fetch Historical Data from Polygon.io
 # ---------------------------
 def fetch_stock_data(ticker, polygon_api_key, days_back=120):
-    # Calculate date range
     end_date = datetime.datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.datetime.now() - datetime.timedelta(days=days_back)).strftime("%Y-%m-%d")
     url = (
@@ -56,21 +55,17 @@ def fetch_stock_data(ticker, polygon_api_key, days_back=120):
 def analyze_vcp_pattern(data, lookback=15):
     if len(data) < lookback:
         return 0, {}
-    # Sort data by date (oldest first)
     data = data.sort_values("t")
     recent = data.tail(lookback)
     days = np.arange(len(recent))
     
-    # Linear regression on volume over the lookback period
     slope, intercept, r_value, p_value, std_err = linregress(days, recent['v'])
-    vol_contraction = slope < 0  # Negative slope indicates contraction
+    vol_contraction = slope < 0
 
-    # Price consolidation: trading range less than 5% of average price
     price_range = recent['c'].max() - recent['c'].min()
     avg_price = recent['c'].mean()
     consolidation = (price_range / avg_price) < 0.05
 
-    # Bullish trend check: latest close > 20-day moving average (if available)
     if len(data) >= 20:
         ma20 = data['c'].rolling(window=20).mean()
         bullish_trend = recent['c'].iloc[-1] > ma20.iloc[-1]
@@ -78,7 +73,6 @@ def analyze_vcp_pattern(data, lookback=15):
         bullish_trend = False
         ma20 = pd.Series([np.nan]*len(data))
     
-    # Additional technical indicators:
     rsi_series = compute_rsi(data['c'], window=14)
     current_rsi = rsi_series.iloc[-1] if not rsi_series.empty else np.nan
     
@@ -86,10 +80,8 @@ def analyze_vcp_pattern(data, lookback=15):
     current_macd = macd.iloc[-1] if not macd.empty else np.nan
     current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else np.nan
 
-    # Volatility: standard deviation of closing prices over the lookback period
     volatility = recent['c'].std()
 
-    # Heuristic Scoring: adjust weights based on indicators
     score = 0
     if vol_contraction:
         score += 30
@@ -97,10 +89,8 @@ def analyze_vcp_pattern(data, lookback=15):
         score += 20
     if bullish_trend:
         score += 30
-    # Favorable RSI range (e.g., 40-60)
     if 40 <= current_rsi <= 60:
         score += 10
-    # MACD bullish confirmation: current MACD above its signal line
     if current_macd > current_macd_signal:
         score += 10
 
@@ -130,7 +120,7 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
     return stop_loss, profit_target
 
 # ---------------------------
-# Updated OpenAI API Call using ChatCompletion
+# Updated OpenAI API Call using Completion.create
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
     openai.api_key = openai_api_key
@@ -141,23 +131,20 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
         "Based solely on this detailed information, return only a single number between 0 and 100 representing the probability that the stock is in a valid VCP setup likely to result in a bullish breakout. "
         "Do not include any additional commentary or explanation."
     )
-    messages = [
-         {"role": "system", "content": best_prompt},
-         {"role": "user", "content": summary_text}
-    ]
+    prompt_text = best_prompt + "\n" + summary_text
     try:
-         response = openai.ChatCompletion.create(
-             model="gpt-3.5-turbo",
-             messages=messages,
-             temperature=0.0,
-             max_tokens=10,
-         )
-         result_text = response.choices[0].message.content.strip()
-         probability = float(result_text)
-         return probability
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=prompt_text,
+            temperature=0.0,
+            max_tokens=10,
+        )
+        result_text = response.choices[0].text.strip()
+        probability = float(result_text)
+        return probability
     except Exception as e:
-         st.error(f"OpenAI API error for {ticker}: {e}")
-         return None
+        st.error(f"OpenAI API error for {ticker}: {e}")
+        return None
 
 # ---------------------------
 # Main Streamlit Application
@@ -170,7 +157,6 @@ def main():
         "such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
     
-    # Sidebar for API keys and trading settings
     st.sidebar.header("API Credentials")
     polygon_api_key = st.sidebar.text_input("Polygon.io API Key", type="password")
     openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
@@ -179,7 +165,6 @@ def main():
     risk_pct = st.sidebar.number_input("Risk per Trade (%)", value=2.0) / 100.0
     risk_reward_ratio = st.sidebar.number_input("Risk/Reward Ratio", value=3.0)
     
-    # Upload TradingView watchlist CSV file
     st.header("Upload TradingView Watchlist")
     uploaded_file = st.file_uploader(
         "Choose a CSV file containing your watchlist (must have a 'Ticker' column)",
@@ -206,12 +191,10 @@ def main():
                 st.write(f"No data available for {ticker}. Skipping.")
                 continue
             
-            # Analyze VCP pattern with enhanced technical indicators
             probability, analysis_details = analyze_vcp_pattern(data, lookback=15)
             entry_price = data.sort_values("t")["c"].iloc[-1]
             stop_loss, profit_target = calculate_trade_levels(entry_price, risk_reward_ratio, risk_pct)
             
-            # Build a detailed summary text for the AI prompt
             summary_text = (
                 f"Volume slope over last {analysis_details.get('lookback_period', 15)} days: {analysis_details.get('vol_slope', 0):.2f}. "
                 f"Price consolidation: {'Yes' if analysis_details.get('consolidation', False) else 'No'} (Range: {analysis_details.get('price_range_pct', 0):.2f}% of average). "
@@ -222,7 +205,6 @@ def main():
                 f"Base Score: {analysis_details.get('base_score', 0)}."
             )
             
-            # Optionally call OpenAI for AI-assisted assessment
             if openai_api_key:
                 ai_probability = call_openai_assessment(ticker, summary_text, openai_api_key)
                 if ai_probability is not None:
@@ -247,4 +229,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
