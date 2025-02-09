@@ -59,13 +59,16 @@ def analyze_vcp_pattern(data, lookback=15):
     recent = data.tail(lookback)
     days = np.arange(len(recent))
     
+    # Linear regression on volume over the lookback period
     slope, intercept, r_value, p_value, std_err = linregress(days, recent['v'])
     vol_contraction = slope < 0
-
+    
+    # Price consolidation: trading range is less than 5% of the average price
     price_range = recent['c'].max() - recent['c'].min()
     avg_price = recent['c'].mean()
     consolidation = (price_range / avg_price) < 0.05
-
+    
+    # Bullish trend: current close > 20-day moving average
     if len(data) >= 20:
         ma20 = data['c'].rolling(window=20).mean()
         bullish_trend = recent['c'].iloc[-1] > ma20.iloc[-1]
@@ -73,15 +76,17 @@ def analyze_vcp_pattern(data, lookback=15):
         bullish_trend = False
         ma20 = pd.Series([np.nan]*len(data))
     
+    # Additional technical indicators
     rsi_series = compute_rsi(data['c'], window=14)
     current_rsi = rsi_series.iloc[-1] if not rsi_series.empty else np.nan
     
     macd, macd_signal = compute_macd(data['c'])
     current_macd = macd.iloc[-1] if not macd.empty else np.nan
     current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else np.nan
-
+    
     volatility = recent['c'].std()
-
+    
+    # Heuristic scoring
     score = 0
     if vol_contraction:
         score += 30
@@ -93,7 +98,7 @@ def analyze_vcp_pattern(data, lookback=15):
         score += 10
     if current_macd > current_macd_signal:
         score += 10
-
+    
     probability = min(score, 100)
     details = {
         "vol_slope": slope,
