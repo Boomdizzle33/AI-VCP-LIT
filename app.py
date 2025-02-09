@@ -128,6 +128,10 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
 # OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
+    if not openai_api_key:
+        st.error("OpenAI API key is missing!")
+        return None
+
     # Set the API key for OpenAI
     openai.api_key = openai_api_key
 
@@ -242,5 +246,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
