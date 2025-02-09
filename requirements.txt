@@ -2,7 +2,8 @@ streamlit
 pandas
 numpy
 requests
-openai==0.28.0
+openai
 scipy
+
 
 
