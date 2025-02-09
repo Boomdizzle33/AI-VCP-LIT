@@ -125,12 +125,12 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
     return stop_loss, profit_target
 
 # ---------------------------
-# OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
+# OpenAI API Call using updated client syntax
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
-    # Set the API key for OpenAI using st.secrets
-    openai.api_key = openai_api_key
-
+    # Initialize the OpenAI client using the updated client syntax
+    client = openai.OpenAI(api_key=openai_api_key)
+    
     best_prompt = (
         "You are a seasoned expert in swing trading and technical analysis specializing in Volume Contraction Pattern (VCP) setups. "
         "Evaluate the following technical analysis summary for a stock, which includes data on volume contraction over the last 15 days, "
@@ -145,7 +145,7 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
         {"role": "user", "content": summary_text}
     ]
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
             temperature=0.0,
@@ -167,7 +167,7 @@ def main():
         "This app analyzes stocks for Volume Contraction Pattern (VCP) setups using Polygon.io market data and leverages OpenAI for an AI-assisted probability assessment. "
         "The analysis includes additional technical indicators such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
-
+    
     # Retrieve API keys from Streamlit secrets
     try:
         polygon_api_key = st.secrets["POLYGON_API_KEY"]
@@ -179,13 +179,13 @@ def main():
     st.sidebar.header("Trading Settings")
     risk_pct = st.sidebar.number_input("Risk per Trade (%)", value=2.0) / 100.0
     risk_reward_ratio = st.sidebar.number_input("Risk/Reward Ratio", value=3.0)
-
+    
     st.header("Upload TradingView Watchlist")
     uploaded_file = st.file_uploader(
         "Choose a CSV file containing your watchlist (must have a 'Ticker' column)",
         type="csv"
     )
-
+    
     if uploaded_file is not None:
         watchlist_df = pd.read_csv(uploaded_file)
         if "Ticker" not in watchlist_df.columns:
@@ -193,7 +193,7 @@ def main():
             return
         tickers = watchlist_df["Ticker"].unique().tolist()
         st.write("Tickers found:", tickers)
-
+        
         results = []
         progress_bar = st.progress(0)
         for i, ticker in enumerate(tickers):
@@ -202,11 +202,11 @@ def main():
             if data.empty:
                 st.write(f"No data available for {ticker}. Skipping.")
                 continue
-
+            
             probability, analysis_details = analyze_vcp_pattern(data, lookback=15)
             entry_price = data.sort_values("t")["c"].iloc[-1]
             stop_loss, profit_target = calculate_trade_levels(entry_price, risk_reward_ratio, risk_pct)
-
+            
             summary_text = (
                 f"Volume slope over last {analysis_details.get('lookback_period', 15)} days: {analysis_details.get('vol_slope', 0):.2f}. "
                 f"Price consolidation: {'Yes' if analysis_details.get('consolidation', False) else 'No'} "
@@ -218,12 +218,12 @@ def main():
                 f"Volatility (std dev): {analysis_details.get('volatility', 0):.2f}. "
                 f"Base Score: {analysis_details.get('base_score', 0)}."
             )
-
+            
             if openai_api_key:
                 ai_probability = call_openai_assessment(ticker, summary_text, openai_api_key)
                 if ai_probability is not None:
                     probability = (probability + ai_probability) / 2
-
+            
             result = {
                 "Ticker": ticker,
                 "Probability (%)": round(probability, 2),
@@ -233,7 +233,7 @@ def main():
             }
             results.append(result)
             progress_bar.progress((i + 1) / len(tickers))
-
+        
         if results:
             results_df = pd.DataFrame(results)
             st.header("Analysis Results")
@@ -243,4 +243,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
