@@ -3,9 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 import datetime
-from openai import OpenAI
-
-client = OpenAI(api_key=openai_api_key)
+import openai
 from scipy.stats import linregress
 
 # ---------------------------
@@ -60,16 +58,16 @@ def analyze_vcp_pattern(data, lookback=15):
     data = data.sort_values("t")
     recent = data.tail(lookback)
     days = np.arange(len(recent))
-
+    
     # Linear regression on volume over the lookback period
     slope, intercept, r_value, p_value, std_err = linregress(days, recent['v'])
     vol_contraction = slope < 0
-
+    
     # Price consolidation: trading range is less than 5% of the average price
     price_range = recent['c'].max() - recent['c'].min()
     avg_price = recent['c'].mean()
     consolidation = (price_range / avg_price) < 0.05
-
+    
     # Bullish trend: current close > 20-day moving average
     if len(data) >= 20:
         ma20 = data['c'].rolling(window=20).mean()
@@ -77,17 +75,17 @@ def analyze_vcp_pattern(data, lookback=15):
     else:
         bullish_trend = False
         ma20 = pd.Series([np.nan]*len(data))
-
+    
     # Additional technical indicators
     rsi_series = compute_rsi(data['c'], window=14)
     current_rsi = rsi_series.iloc[-1] if not rsi_series.empty else np.nan
-
+    
     macd, macd_signal = compute_macd(data['c'])
     current_macd = macd.iloc[-1] if not macd.empty else np.nan
     current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else np.nan
-
+    
     volatility = recent['c'].std()
-
+    
     # Heuristic scoring
     score = 0
     if vol_contraction:
@@ -100,7 +98,7 @@ def analyze_vcp_pattern(data, lookback=15):
         score += 10
     if current_macd > current_macd_signal:
         score += 10
-
+    
     probability = min(score, 100)
     details = {
         "vol_slope": slope,
@@ -130,6 +128,9 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
 # OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
+    # Set the API key for OpenAI
+    openai.api_key = openai_api_key
+
     best_prompt = (
         "You are a seasoned expert in swing trading and technical analysis specializing in Volume Contraction Pattern (VCP) setups. "
         "Evaluate the following technical analysis summary for a stock, which includes data on volume contraction over the last 15 days, "
@@ -144,10 +145,12 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
         {"role": "user", "content": summary_text}
     ]
     try:
-        response = client.chat.completions.create(model="gpt-3.5-turbo",
-        messages=messages,
-        temperature=0.0,
-        max_tokens=10)
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0.0,
+            max_tokens=10,
+        )
         result_text = response.choices[0].message.content.strip()
         probability = float(result_text)
         return probability
@@ -239,4 +242,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
