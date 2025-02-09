@@ -42,7 +42,6 @@ def fetch_stock_data(ticker, polygon_api_key, days_back=120):
         data_json = response.json()
         if "results" in data_json:
             df = pd.DataFrame(data_json["results"])
-            # Convert timestamp from milliseconds to datetime
             df["t"] = pd.to_datetime(df["t"], unit="ms")
             return df
         else:
@@ -62,7 +61,7 @@ def analyze_vcp_pattern(data, lookback=15):
     recent = data.tail(lookback)
     days = np.arange(len(recent))
     
-    # Linear regression on volume (using the last 'lookback' days)
+    # Linear regression on volume over the lookback period
     slope, intercept, r_value, p_value, std_err = linregress(days, recent['v'])
     vol_contraction = slope < 0  # Negative slope indicates contraction
 
@@ -71,7 +70,7 @@ def analyze_vcp_pattern(data, lookback=15):
     avg_price = recent['c'].mean()
     consolidation = (price_range / avg_price) < 0.05
 
-    # Bullish trend: current close > 20-day moving average (if available)
+    # Bullish trend check: latest close > 20-day moving average (if available)
     if len(data) >= 20:
         ma20 = data['c'].rolling(window=20).mean()
         bullish_trend = recent['c'].iloc[-1] > ma20.iloc[-1]
@@ -87,10 +86,10 @@ def analyze_vcp_pattern(data, lookback=15):
     current_macd = macd.iloc[-1] if not macd.empty else np.nan
     current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else np.nan
 
-    # Price volatility: standard deviation of closing prices over lookback period
+    # Volatility: standard deviation of closing prices over the lookback period
     volatility = recent['c'].std()
 
-    # Heuristic Scoring: Adjust weights based on indicators
+    # Heuristic Scoring: adjust weights based on indicators
     score = 0
     if vol_contraction:
         score += 30
@@ -98,7 +97,7 @@ def analyze_vcp_pattern(data, lookback=15):
         score += 20
     if bullish_trend:
         score += 30
-    # Favorable RSI (neither overbought nor oversold, e.g., between 40 and 60)
+    # Favorable RSI range (e.g., 40-60)
     if 40 <= current_rsi <= 60:
         score += 10
     # MACD bullish confirmation: current MACD above its signal line
@@ -131,7 +130,7 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
     return stop_loss, profit_target
 
 # ---------------------------
-# Call OpenAI for AI-Assisted Assessment
+# Updated OpenAI API Call using ChatCompletion
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
     openai.api_key = openai_api_key
@@ -142,21 +141,23 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
         "Based solely on this detailed information, return only a single number between 0 and 100 representing the probability that the stock is in a valid VCP setup likely to result in a bullish breakout. "
         "Do not include any additional commentary or explanation."
     )
-    prompt = best_prompt + "\n" + summary_text
+    messages = [
+         {"role": "system", "content": best_prompt},
+         {"role": "user", "content": summary_text}
+    ]
     try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=10,
-            temperature=0.0,
-            n=1,
-        )
-        result_text = response.choices[0].text.strip()
-        probability = float(result_text)
-        return probability
+         response = openai.ChatCompletion.create(
+             model="gpt-3.5-turbo",
+             messages=messages,
+             temperature=0.0,
+             max_tokens=10,
+         )
+         result_text = response.choices[0].message.content.strip()
+         probability = float(result_text)
+         return probability
     except Exception as e:
-        st.error(f"OpenAI API error for {ticker}: {e}")
-        return None
+         st.error(f"OpenAI API error for {ticker}: {e}")
+         return None
 
 # ---------------------------
 # Main Streamlit Application
@@ -165,7 +166,7 @@ def main():
     st.title("VCP Swing Trade Analyzer")
     st.markdown(
         "This app analyzes stocks for Volume Contraction Pattern (VCP) setups using Polygon.io market data "
-        "and leverages OpenAI for an AI-assisted probability assessment. The analysis now includes additional technical indicators "
+        "and leverages OpenAI for an AI-assisted probability assessment. The analysis includes additional technical indicators "
         "such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
     
@@ -205,7 +206,7 @@ def main():
                 st.write(f"No data available for {ticker}. Skipping.")
                 continue
             
-            # Analyze VCP pattern using enhanced technical indicators
+            # Analyze VCP pattern with enhanced technical indicators
             probability, analysis_details = analyze_vcp_pattern(data, lookback=15)
             entry_price = data.sort_values("t")["c"].iloc[-1]
             stop_loss, profit_target = calculate_trade_levels(entry_price, risk_reward_ratio, risk_pct)
@@ -221,7 +222,7 @@ def main():
                 f"Base Score: {analysis_details.get('base_score', 0)}."
             )
             
-            # Optionally call OpenAI to refine the probability assessment
+            # Optionally call OpenAI for AI-assisted assessment
             if openai_api_key:
                 ai_probability = call_openai_assessment(ticker, summary_text, openai_api_key)
                 if ai_probability is not None:
@@ -246,3 +247,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
