@@ -128,11 +128,7 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
 # OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
-    if not openai_api_key:
-        st.error("OpenAI API key is missing!")
-        return None
-
-    # Set the API key for OpenAI
+    # Set the API key for OpenAI using st.secrets
     openai.api_key = openai_api_key
 
     best_prompt = (
@@ -172,9 +168,13 @@ def main():
         "The analysis includes additional technical indicators such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
 
-    st.sidebar.header("API Credentials")
-    polygon_api_key = st.sidebar.text_input("Polygon.io API Key", type="password")
-    openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+    # Retrieve API keys from Streamlit secrets
+    try:
+        polygon_api_key = st.secrets["POLYGON_API_KEY"]
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+    except Exception as e:
+        st.error("API keys not found in st.secrets. Please add POLYGON_API_KEY and OPENAI_API_KEY to your secrets.toml file.")
+        return
 
     st.sidebar.header("Trading Settings")
     risk_pct = st.sidebar.number_input("Risk per Trade (%)", value=2.0) / 100.0
@@ -198,9 +198,6 @@ def main():
         progress_bar = st.progress(0)
         for i, ticker in enumerate(tickers):
             st.write(f"Processing {ticker}...")
-            if not polygon_api_key:
-                st.error("Polygon.io API key is required.")
-                return
             data = fetch_stock_data(ticker, polygon_api_key)
             if data.empty:
                 st.write(f"No data available for {ticker}. Skipping.")
