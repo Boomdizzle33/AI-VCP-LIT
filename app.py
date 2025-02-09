@@ -120,7 +120,7 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
     return stop_loss, profit_target
 
 # ---------------------------
-# Updated OpenAI API Call using Completion.create
+# OpenAI API Call using Completion.create (no ChatCompletion)
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
     openai.api_key = openai_api_key
