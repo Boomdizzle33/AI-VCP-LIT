@@ -3,7 +3,9 @@ import pandas as pd
 import numpy as np
 import requests
 import datetime
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=openai_api_key)
 from scipy.stats import linregress
 
 # ---------------------------
@@ -58,16 +60,16 @@ def analyze_vcp_pattern(data, lookback=15):
     data = data.sort_values("t")
     recent = data.tail(lookback)
     days = np.arange(len(recent))
-    
+
     # Linear regression on volume over the lookback period
     slope, intercept, r_value, p_value, std_err = linregress(days, recent['v'])
     vol_contraction = slope < 0
-    
+
     # Price consolidation: trading range is less than 5% of the average price
     price_range = recent['c'].max() - recent['c'].min()
     avg_price = recent['c'].mean()
     consolidation = (price_range / avg_price) < 0.05
-    
+
     # Bullish trend: current close > 20-day moving average
     if len(data) >= 20:
         ma20 = data['c'].rolling(window=20).mean()
@@ -75,17 +77,17 @@ def analyze_vcp_pattern(data, lookback=15):
     else:
         bullish_trend = False
         ma20 = pd.Series([np.nan]*len(data))
-    
+
     # Additional technical indicators
     rsi_series = compute_rsi(data['c'], window=14)
     current_rsi = rsi_series.iloc[-1] if not rsi_series.empty else np.nan
-    
+
     macd, macd_signal = compute_macd(data['c'])
     current_macd = macd.iloc[-1] if not macd.empty else np.nan
     current_macd_signal = macd_signal.iloc[-1] if not macd_signal.empty else np.nan
-    
+
     volatility = recent['c'].std()
-    
+
     # Heuristic scoring
     score = 0
     if vol_contraction:
@@ -98,7 +100,7 @@ def analyze_vcp_pattern(data, lookback=15):
         score += 10
     if current_macd > current_macd_signal:
         score += 10
-    
+
     probability = min(score, 100)
     details = {
         "vol_slope": slope,
@@ -128,7 +130,6 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
 # OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
-    openai.api_key = openai_api_key
     best_prompt = (
         "You are a seasoned expert in swing trading and technical analysis specializing in Volume Contraction Pattern (VCP) setups. "
         "Evaluate the following technical analysis summary for a stock, which includes data on volume contraction over the last 15 days, "
@@ -143,12 +144,10 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
         {"role": "user", "content": summary_text}
     ]
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=0.0,
-            max_tokens=10,
-        )
+        response = client.chat.completions.create(model="gpt-3.5-turbo",
+        messages=messages,
+        temperature=0.0,
+        max_tokens=10)
         result_text = response.choices[0].message.content.strip()
         probability = float(result_text)
         return probability
@@ -165,21 +164,21 @@ def main():
         "This app analyzes stocks for Volume Contraction Pattern (VCP) setups using Polygon.io market data and leverages OpenAI for an AI-assisted probability assessment. "
         "The analysis includes additional technical indicators such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
-    
+
     st.sidebar.header("API Credentials")
     polygon_api_key = st.sidebar.text_input("Polygon.io API Key", type="password")
     openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
-    
+
     st.sidebar.header("Trading Settings")
     risk_pct = st.sidebar.number_input("Risk per Trade (%)", value=2.0) / 100.0
     risk_reward_ratio = st.sidebar.number_input("Risk/Reward Ratio", value=3.0)
-    
+
     st.header("Upload TradingView Watchlist")
     uploaded_file = st.file_uploader(
         "Choose a CSV file containing your watchlist (must have a 'Ticker' column)",
         type="csv"
     )
-    
+
     if uploaded_file is not None:
         watchlist_df = pd.read_csv(uploaded_file)
         if "Ticker" not in watchlist_df.columns:
@@ -187,7 +186,7 @@ def main():
             return
         tickers = watchlist_df["Ticker"].unique().tolist()
         st.write("Tickers found:", tickers)
-        
+
         results = []
         progress_bar = st.progress(0)
         for i, ticker in enumerate(tickers):
@@ -199,11 +198,11 @@ def main():
             if data.empty:
                 st.write(f"No data available for {ticker}. Skipping.")
                 continue
-            
+
             probability, analysis_details = analyze_vcp_pattern(data, lookback=15)
             entry_price = data.sort_values("t")["c"].iloc[-1]
             stop_loss, profit_target = calculate_trade_levels(entry_price, risk_reward_ratio, risk_pct)
-            
+
             summary_text = (
                 f"Volume slope over last {analysis_details.get('lookback_period', 15)} days: {analysis_details.get('vol_slope', 0):.2f}. "
                 f"Price consolidation: {'Yes' if analysis_details.get('consolidation', False) else 'No'} "
@@ -215,12 +214,12 @@ def main():
                 f"Volatility (std dev): {analysis_details.get('volatility', 0):.2f}. "
                 f"Base Score: {analysis_details.get('base_score', 0)}."
             )
-            
+
             if openai_api_key:
                 ai_probability = call_openai_assessment(ticker, summary_text, openai_api_key)
                 if ai_probability is not None:
                     probability = (probability + ai_probability) / 2
-            
+
             result = {
                 "Ticker": ticker,
                 "Probability (%)": round(probability, 2),
@@ -230,7 +229,7 @@ def main():
             }
             results.append(result)
             progress_bar.progress((i + 1) / len(tickers))
-        
+
         if results:
             results_df = pd.DataFrame(results)
             st.header("Analysis Results")
