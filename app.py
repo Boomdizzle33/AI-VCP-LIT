@@ -125,26 +125,31 @@ def calculate_trade_levels(entry_price, risk_reward_ratio=3, risk_pct=0.02):
     return stop_loss, profit_target
 
 # ---------------------------
-# OpenAI API Call using Completion.create (no ChatCompletion)
+# OpenAI API Call using ChatCompletion.create with gpt-3.5-turbo
 # ---------------------------
 def call_openai_assessment(ticker, summary_text, openai_api_key):
     openai.api_key = openai_api_key
     best_prompt = (
         "You are a seasoned expert in swing trading and technical analysis specializing in Volume Contraction Pattern (VCP) setups. "
-        "Evaluate the following technical analysis summary for a stock, which includes data on volume contraction over the last 15 days, price consolidation metrics (where the trading range is less than 5% of the average price), RSI, MACD readings, and a bullish trend confirmation via a 20-day moving average. "
-        "Additionally, consider any provided metrics such as percentage changes, volatility measures, and momentum indicators that may indicate whether the observed contraction is statistically significant and part of a longer-term consolidation phase. "
-        "Based solely on this detailed information, return only a single number between 0 and 100 representing the probability that the stock is in a valid VCP setup likely to result in a bullish breakout. "
-        "Do not include any additional commentary or explanation."
+        "Evaluate the following technical analysis summary for a stock, which includes data on volume contraction over the last 15 days, "
+        "price consolidation metrics (where the trading range is less than 5% of the average price), RSI, MACD readings, and a bullish trend "
+        "confirmation via a 20-day moving average. Additionally, consider any provided metrics such as percentage changes, volatility measures, "
+        "and momentum indicators that may indicate whether the observed contraction is statistically significant and part of a longer-term "
+        "consolidation phase. Based solely on this detailed information, return only a single number between 0 and 100 representing the "
+        "probability that the stock is in a valid VCP setup likely to result in a bullish breakout. Do not include any additional commentary or explanation."
     )
-    prompt_text = best_prompt + "\n" + summary_text
+    messages = [
+        {"role": "system", "content": best_prompt},
+        {"role": "user", "content": summary_text}
+    ]
     try:
-        response = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=prompt_text,
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
             temperature=0.0,
             max_tokens=10,
         )
-        result_text = response.choices[0].text.strip()
+        result_text = response.choices[0].message.content.strip()
         probability = float(result_text)
         return probability
     except Exception as e:
@@ -157,9 +162,8 @@ def call_openai_assessment(ticker, summary_text, openai_api_key):
 def main():
     st.title("VCP Swing Trade Analyzer")
     st.markdown(
-        "This app analyzes stocks for Volume Contraction Pattern (VCP) setups using Polygon.io market data "
-        "and leverages OpenAI for an AI-assisted probability assessment. The analysis includes additional technical indicators "
-        "such as RSI, MACD, and volatility to enhance detection of true VCP setups."
+        "This app analyzes stocks for Volume Contraction Pattern (VCP) setups using Polygon.io market data and leverages OpenAI for an AI-assisted probability assessment. "
+        "The analysis includes additional technical indicators such as RSI, MACD, and volatility to enhance detection of true VCP setups."
     )
     
     st.sidebar.header("API Credentials")
@@ -202,8 +206,10 @@ def main():
             
             summary_text = (
                 f"Volume slope over last {analysis_details.get('lookback_period', 15)} days: {analysis_details.get('vol_slope', 0):.2f}. "
-                f"Price consolidation: {'Yes' if analysis_details.get('consolidation', False) else 'No'} (Range: {analysis_details.get('price_range_pct', 0):.2f}% of average). "
-                f"Bullish trend: {'Yes' if analysis_details.get('bullish_trend', False) else 'No'} (Current Close: {analysis_details.get('current_close', 0):.2f}, 20-day MA: {analysis_details.get('ma20', 'N/A')}). "
+                f"Price consolidation: {'Yes' if analysis_details.get('consolidation', False) else 'No'} "
+                f"(Range: {analysis_details.get('price_range_pct', 0):.2f}% of average). "
+                f"Bullish trend: {'Yes' if analysis_details.get('bullish_trend', False) else 'No'} "
+                f"(Current Close: {analysis_details.get('current_close', 0):.2f}, 20-day MA: {analysis_details.get('ma20', 'N/A')}). "
                 f"RSI: {analysis_details.get('current_rsi', 0):.2f}. "
                 f"MACD: {analysis_details.get('current_macd', 0):.2f} vs Signal: {analysis_details.get('current_macd_signal', 0):.2f}. "
                 f"Volatility (std dev): {analysis_details.get('volatility', 0):.2f}. "
